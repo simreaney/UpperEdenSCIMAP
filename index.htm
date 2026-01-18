@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SCIMAP for Upper Eden</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style type="text/css">
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        html, body, #map {
+            width: 100%;
+            height: 95%;
+        }
+    </style>
+    <style>
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+        }
+
+        .info h4 {
+            margin: 0 0 5px;
+            color: #777;
+        }
+
+        .legend {
+            text-align: left;
+            line-height: 18px;
+            color: #555;
+        }
+
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+<h1>SCIMAP for Upper Eden</h1>
+<button id="locationButton">Locate Me</button>
+<div id="map"></div>
+
+<script>
+    var map = L.map('map').setView([54.54860,-2.43425], 11);
+
+    // OpenStreetMap Tile Layer
+    var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: 'Background map &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+
+    // ESRI World Imagery Tile Layer
+    var esriLayer = L.tileLayer('http://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Background map &copy; ESRI</a>'
+    });
+
+    // ESRI Dark Grey Canvas Tile Layer
+    var esriLayerDGC = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Background map &copy; ESRI'
+    });
+
+    // Add OpenStreetMap as the default base layer
+    osmLayer.addTo(map);
+
+    // Define baseMaps object for layer control
+    var baseMaps = {
+        "OpenStreetMap": osmLayer,
+        "ESRI World Imagery": esriLayer,
+        "ESRI Dark Grey Canvas": esriLayerDGC
+    };
+
+    // Return the first visible overlay name (if any)
+    function getVisibleOverlayName() {
+        if (typeof overlayMaps !== 'undefined') {
+            for (var name in overlayMaps) {
+                if (overlayMaps.hasOwnProperty(name) && map.hasLayer(overlayMaps[name])) {
+                    return name;
+                }
+            }
+        }
+        return '';
+    }
+
+    // Build legend HTML for a given layer name
+    function legendHtmlForLayer(name) {
+        if (!name) return '';
+        // Instream Risk Concentration and CSA scores use same continuous colour ramp
+        if (name === 'Instream Risk Concentration' || name === 'Critical Source Area Scores (CSAs)' || name === 'Flow and sediment surface flow pathways') {
+            var grades = [0, 0.25, 0.5, 0.75, 1.0];
+            var html = '<h4>' + name + '</h4>';
+            for (var i = 0; i < grades.length; i++) {
+            html += '<i style="background:' + getColor(grades[i]) + '"></i> ' +
+                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
+            }
+            return html;
+        }
+        // Top 10% - single swatch
+        if (name === 'CSAs - Top 10% TDI5 Sources') {
+            return '<i style="background:#ff0000"></i> Top 10% critical source areas';
+        }
+        // Breakthrough / Delivery points
+        if (name === 'Breakthrough and delivery points') {
+            return '<i style="background:#ff0000; width:12px; height:12px; border-radius:50%; display:inline-block; margin-right:8px;"></i> Breakthrough points<br>' +
+               '<i style="background:#0000ff; width:12px; height:12px; border-radius:50%; display:inline-block; margin-right:8px;"></i> Delivery points';
+        }
+
+        // Density maps
+        if (name === 'Density map of breakthrough points' || name === 'Density map of delivery points') {
+            var grades = [0, 0.25, 0.5, 0.75, 1.0];
+            var legendText =['Low Density', 'Medium Density', 'High Density', 'Very High Density', 'Highest Density'];
+            var html = '<h4>' + name + '</h4>';
+            for (var i = 0; i < grades.length; i++) {
+            html += '<i style="background:' + getColor(grades[i]) + '"></i> ' +
+                legendText[i] + (legendText[i + 1] ? '<br>' : '+');
+            }
+            return html;
+        }
+        return '';
+    }
+
+    // Update the legend DOM created later in the script (class 'info legend')
+    function updateLegendForVisibleLayer() {
+        var legendDiv = document.querySelector('.info.legend');
+        if (!legendDiv) return;
+
+        // If overlayMaps not yet defined, clear and exit
+        if (typeof overlayMaps === 'undefined') {
+            legendDiv.innerHTML = '';
+            return;
+        }
+
+        // Build combined legend for ALL visible overlay layers
+        var combinedHtml = '';
+        var anyVisible = false;
+        for (var name in overlayMaps) {
+            if (overlayMaps.hasOwnProperty(name) && map.hasLayer(overlayMaps[name])) {
+                anyVisible = true;
+                combinedHtml += legendHtmlForLayer(name) + '<hr style="margin:6px 0;">';
+            }
+        }
+
+        // If none visible, optionally show nothing or a default message. Here we leave it empty.
+        legendDiv.innerHTML = anyVisible ? combinedHtml : '';
+    }
+
+    // Update legend whenever layers change
+    map.on('overlayadd overlayremove baselayerchange', function (e) {
+        // small timeout to allow control internals to finish
+        setTimeout(updateLegendForVisibleLayer, 10);
+    });
+
+    // Ensure legend is correct after the rest of the script runs (initial state)
+    setTimeout(updateLegendForVisibleLayer, 300);
+
+    // Tile layers for overlays
+    map1 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/erosionRisk/{z}/{x}/{y}.png', {
+        minZoom: 8,
+        maxZoom: 16,
+        tms: false,
+        attribution: 'Sim Reaney / SCIMAP',
+        name: 'Erosion Risk'
+    });
+
+    map2 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/connectivity/{z}/{x}/{y}.png', {
+        minZoom: 8,
+        maxZoom: 16,
+        tms: false,
+        attribution: 'Sim Reaney / SCIMAP',
+        name: 'Connectivity (NetWet)'
+    });
+
+
+    map4 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/inStreamConcn/{z}/{x}/{y}.png', {
+        minZoom: 8,
+        maxZoom: 16,
+        tms: false,
+        attribution: 'Sim Reaney / SCIMAP',
+        name: 'In stream sediment risk concentration'
+    });
+
+    // map5 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/deliveryAndBreakthroughPoints/{z}/{x}/{y}.png', {
+    //     minZoom: 8,
+    //     maxZoom: 16,
+    //     tms: false,
+    //     attribution: 'Sim Reaney / SCIMAP',
+    //     name: 'Breakthrough and Delivery Points'
+    // });
+
+    // map6 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/pathways/{z}/{x}/{y}.png', {
+    //     minZoom: 8,
+    //     maxZoom: 16,
+    //     tms: false,
+    //     attribution: 'Sim Reaney / SCIMAP',
+    //     name: 'Flow pathways'
+    // });
+    // map7 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/heatmapBPs/{z}/{x}/{y}.png', {
+    //     minZoom: 8,
+    //     maxZoom: 16,
+    //     tms: false,
+    //     attribution: 'Sim Reaney / SCIMAP',
+    //     name: 'Density Map of Breakthrough Points'
+    // });
+    // map8 = L.tileLayer('https://simreaney.github.io/UpperEdenSCIMAP/heatmapDPs/{z}/{x}/{y}.png', {
+    //     minZoom: 8,
+    //     maxZoom: 16,
+    //     tms: false,
+    //     attribution: 'Sim Reaney / SCIMAP',
+    //     name: 'Density Map of Delivery Points'
+    // });
+    var overlayMaps = {
+        "CSAs - Top 10% TDI5 Sources": map1,
+        "Critical Source Area Scores (CSAs)": map2,
+        'Breakthrough and delivery points': map5,
+        'Flow and sediment surface flow pathways': map6,
+        'Density map of breakthrough points': map7,
+        'Density map of delivery points': map8,
+        "Instream Risk Concentration": map4
+    };
+
+    // Add layer control (base + overlays)
+    L.control.layers(baseMaps, overlayMaps).addTo(map);
+
+    //legend color function
+    function getColor(d) {
+        return d > 1.0 ? '#ebffff' :
+            d > 0.75 ? '#eb0000' :
+            d > 0.5 ? '#ffa94f' :
+            d > 0.25 ? '#ffffb7' :
+            d > 0.00 ? '#9ddf9e' :
+            '#0085bf';
+    }
+
+    // Create a single legend control whose contents will be updated to show ALL visible overlays
+    var legend = L.control({position: 'bottomright'});
+
+    legend.onAdd = function (map) {
+        var div = L.DomUtil.create('div', 'info legend');
+        div.innerHTML = ''; // will be populated by updateLegendForVisibleLayer()
+        return div;
+    };
+    legend.addTo(map);
+
+    // Optionally add a default overlay at load
+    map.addLayer(map4);
+
+    // ensure legend shows for initial visible layers
+    setTimeout(updateLegendForVisibleLayer, 300);
+
+    var userLocationMarker;
+
+    document.getElementById('locationButton').addEventListener('click', function() {
+        map.locate({setView: true, maxZoom: 16});
+    });
+
+    function onLocationFound(e) {
+        var radius = e.accuracy / 2;
+        if (userLocationMarker) {
+            map.removeLayer(userLocationMarker);
+        }
+
+        userLocationMarker = L.circleMarker(e.latlng, {
+            color: 'blue',
+            fillColor: 'blue',
+            fillOpacity: 0.5,
+            radius: 5
+        }).addTo(map);
+
+        userLocationMarker.bindPopup("Accuracy: " + radius).openPopup();
+    }
+
+    function onLocationError(e) {
+        alert(e.message);
+    }
+
+    map.on('locationfound', onLocationFound);
+    map.on('locationerror', onLocationError);
+</script>
+</body>
+</html>
